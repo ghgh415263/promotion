@@ -13,8 +13,8 @@ spring:
       default-filters:
         - name: RequestRateLimiter
           args:
-            redis-rate-limiter.replenishRate: 10
-            redis-rate-limiter.burstCapacity: 20
+            redis-rate-limiter.replenishRate: 10 #초당 추가되는 토큰 수
+            redis-rate-limiter.burstCapacity: 20 #최대로 저장가능한 토큰수
             redis-rate-limiter.requestedTokens: 1
             key-resolver: "#{@userKeyResolver}"
       routes:
@@ -83,7 +83,7 @@ eureka:
     hostname: localhost
 
 jwt:
-  secret: promotionTestSecretKey2024PromotionTestSecretKey2024
+  secret: fdsgsdfghbcvxbxcvbdfgshdfgsdfgsdfgbbxcvb
   token-validity-in-seconds: 3600
 
 management:

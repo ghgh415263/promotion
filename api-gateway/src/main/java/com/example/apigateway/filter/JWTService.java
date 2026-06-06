@@ -1,35 +1,21 @@
-package org.example.userservice.service;
+package com.example.apigateway.filter;
 
-import org.example.userservice.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Date;
 
-@Service
+@Component
 @Slf4j
 public class JWTService {
 
     @Value("${jwt.secret}")
     private String secretKey;
-
-    public String generateToken(User user) {
-        long currentTimeMillis = System.currentTimeMillis();
-        return Jwts.builder()
-                .subject(user.getEmail())
-                .claim("role", "USER")
-                .claim("id", user.getId())
-                .issuedAt(new Date(currentTimeMillis))
-                .expiration(new Date(currentTimeMillis + 3600000)) // Token expires in 1 hour
-                .signWith(Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8)))
-                .compact();
-    }
 
     public Claims validateToken(String token) {
         try {
@@ -46,17 +32,5 @@ public class JWTService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-    }
-
-    public String refreshToken(String token) {
-        Claims claims = parseJwtClaims(token);
-        long currentTimeMillis = System.currentTimeMillis();
-        return Jwts.builder()
-                .subject(claims.getSubject())
-                .claims(claims)
-                .issuedAt(new Date(currentTimeMillis))
-                .expiration(new Date(currentTimeMillis + 3600000))
-                .signWith(Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8)))
-                .compact();
     }
 }

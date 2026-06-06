@@ -35,7 +35,7 @@ eureka:
     hostname: localhost
 
 jwt:
-  secret: 1ad35d74dc65cc0ee9a3a409f7f87e332aa6aa89d9cc64c66cdf9a1ffdc534ee
+  secret: fdsgsdfghbcvxbxcvbdfgshdfgsdfgsdfgbbxcvb
 
 server:
   port: 8004

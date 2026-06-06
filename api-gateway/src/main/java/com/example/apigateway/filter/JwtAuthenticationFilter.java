@@ -1,69 +1,63 @@
 package com.example.apigateway.filter;
 
-import org.springframework.cloud.client.loadbalancer.LoadBalanced;
-import org.springframework.cloud.client.loadbalancer.reactive.ReactorLoadBalancerExchangeFilterFunction;
+import io.jsonwebtoken.Claims;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
-import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.server.ServerWebExchange;
-import reactor.core.publisher.Mono;
-
-import java.util.Map;
 
 @Component
 public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAuthenticationFilter.Config> {
 
-    @LoadBalanced
-    private final WebClient webClient;
+    private final JWTService jwtService;
 
-    public JwtAuthenticationFilter(ReactorLoadBalancerExchangeFilterFunction lbFunction) {
+    public JwtAuthenticationFilter(JWTService jwtService) {
         super(Config.class);
-        this.webClient = WebClient.builder()
-                .filter(lbFunction)
-                .baseUrl("http://user-service")
-                .build();
+        this.jwtService = jwtService;
     }
 
     @Override
     public GatewayFilter apply(Config config) {
+
         return (exchange, chain) -> {
-            String authHeader = exchange.getRequest().getHeaders().getFirst("Authorization");
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                String token = authHeader.substring(7);
-                return validateToken(token)
-                        .flatMap(userId -> proceedWithUserId(userId, exchange, chain))
-                        .switchIfEmpty(chain.filter(exchange)) // If token is invalid, continue without setting userId
-                        .onErrorResume(e -> handleAuthenticationError(exchange, e)); // Handle errors
+
+            String authHeader = exchange.getRequest()
+                    .getHeaders()
+                    .getFirst(HttpHeaders.AUTHORIZATION);
+
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return chain.filter(exchange);
             }
 
-            return chain.filter(exchange);
+            try {
+                String token = authHeader.substring(7);
+
+                Claims claims = jwtService.validateToken(token);
+
+                Long userId = claims.get("id", Integer.class).longValue();
+                String role = claims.get("role", String.class);
+
+                ServerHttpRequest request = exchange.getRequest()
+                        .mutate()
+                        .header("X-USER-ID", String.valueOf(userId))
+                        .header("X-USER-ROLE", role)
+                        .build();
+
+                return chain.filter(
+                        exchange.mutate()
+                                .request(request)
+                                .build()
+                );
+
+            } catch (Exception e) {
+                exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+                return exchange.getResponse().setComplete();
+            }
         };
     }
 
-    private Mono<Void> handleAuthenticationError(ServerWebExchange exchange, Throwable e) {
-        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-        return exchange.getResponse().setComplete();
-    }
-
-    private Mono<Long> validateToken(String token) {
-        return webClient.post()
-                .uri("/api/v1/users/validate-token")
-                .bodyValue("{\"token\":\"" + token + "\"}")
-                .header("Content-Type", "application/json")
-                .retrieve()
-                .bodyToMono(Map.class)
-                .map(response -> Long.valueOf(response.get("id").toString()) );
-    }
-
-    private Mono<Void> proceedWithUserId(Long userId, ServerWebExchange exchange, GatewayFilterChain chain) {
-        exchange.getRequest().mutate().header("X-USER-ID", String.valueOf(userId));
-        return chain.filter(exchange);
-    }
-
     public static class Config {
-        // 필터 구성을 위한 설정 클래스
     }
 }

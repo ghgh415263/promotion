@@ -6,7 +6,6 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -24,6 +23,7 @@ public class JWTService {
         return Jwts.builder()
                 .subject(user.getEmail())
                 .claim("role", "USER")
+                .claim("id", user.getId())
                 .issuedAt(new Date(currentTimeMillis))
                 .expiration(new Date(currentTimeMillis + 3600000)) // Token expires in 1 hour
                 .signWith(Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8)))

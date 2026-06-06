@@ -10,13 +10,6 @@ import reactor.core.publisher.Mono;
 public class RateLimitConfig {
 
     @Bean
-    public RedisRateLimiter redisRateLimiter() {
-        // replenishRate: 초당 허용되는 요청 수
-        // burstCapacity: 최대 누적 가능한 요청 수
-        return new RedisRateLimiter(10, 20);
-    }
-
-    @Bean
     public KeyResolver userKeyResolver() {
         return exchange -> Mono.just(
             exchange.getRequest().getHeaders().getFirst("X-User-ID") != null ?
