@@ -19,6 +19,47 @@
 
 `RequestRateLimiter` 필터의 슬라이딩 윈도 카운터를 저장합니다.  
 메모리 기반이라 속도가 빠르고, 게이트웨이 재시작 후에도 카운터 상태가 유지됩니다.
+```
+-- 인자 값 받기
+local tokens_key = KEYS[1]           -- 토큰 개수를 저장할 Redis 키 (예: user1:tokens)
+local timestamp_key = KEYS[2]        -- 마지막 충전 시간을 저장할 Redis 키 (예: user1:timestamp)
+
+local rate = tonumber(ARGV[1])       -- 초당 토큰 충전 속도 (예: 초당 2개)
+local capacity = tonumber(ARGV[2])   -- 버킷 최대 용량 (예: 최대 5개)
+local now = tonumber(ARGV[3])        -- 현재 시간 (Unix Timestamp 초 단위)
+local requested = tonumber(ARGV[4])  -- 이번 요청에서 소모할 토큰 수 (기본 1개)
+
+-- 1. 기존 값 불러오기 (없으면 초기화)
+local current_tokens = tonumber(redis.call('get', tokens_key))
+if current_tokens == nil then
+    current_tokens = capacity
+end
+
+local last_refreshed = tonumber(redis.call('get', timestamp_key))
+if last_refreshed == nil then
+    last_refreshed = 0
+end
+
+-- 2. 마지막 요청 이후 경과한 시간 계산
+local delta = math.max(0, now - last_refreshed)
+
+-- 3. 경과한 시간만큼 토큰 충전 (단, 최대 용량을 넘을 수 없음)
+local refilled_tokens = math.min(capacity, current_tokens + (delta * rate))
+
+-- 4. 토큰이 충분한지 확인 후 차감
+local allowed = 0
+if refilled_tokens >= requested then
+    allowed = 1
+    refilled_tokens = refilled_tokens - requested
+end
+
+-- 5. 갱신된 토큰 수와 현재 시간을 Redis에 다시 저장 (만료시간 설정)
+redis.call('setex', tokens_key, 2, refilled_tokens)
+redis.call('setex', timestamp_key, 2, now)
+
+-- 6. 허용 여부 반환 (1이면 통과, 0이면 무시)
+return { allowed, refilled_tokens }
+```
 
 ### Eureka (Discovery Server)
 
@@ -112,6 +153,44 @@ Content-Type: application/json
 GET http://localhost:8000/api/v1/users/me
 Authorization: Bearer <token>
 ```
+
+---
+
+## ⚡ 서킷 브레이커 (Circuit Breaker)
+
+### 왜 필요한가 — 장애 전파 방지
+
+유저 서버의 DB가 뻗거나 연산이 밀려 응답을 주지 못할 때, 서킷 브레이커가 없다면 다음 순서로 장애가 전파됩니다.
+
+```
+1. 게이트웨이가 유저 서버 응답을 기다리며 서버 자원(TCP 연결)을 계속 점유
+2. 사용자가 재시도·새로고침을 반복 → 게이트웨이 자원 전체 고갈
+3. 멀쩡하던 게이트웨이까지 다운 → 모든 마이크로서비스로 가는 길목 차단
+```
+
+> 💡 **서킷 브레이커의 해결책**  
+> "유저 서버가 불안정하면, 게이트웨이 선에서 즉시 에러 처리(또는 Fallback 응답)하고 유저 서버로의 요청을 차단한다."
+
+---
+
+### 3가지 상태 (State Machine)
+
+```
+         실패율 ≥ 임계치                  대기 시간 초과
+  Closed ──────────────▶ Open ──────────────────▶ Half-Open
+    ▲                                                  │
+    │         간보기 요청 성공                          │
+    └──────────────────────────────────────────────────┘
+                              │ 간보기 요청 실패
+                              ▼
+                            Open (타이머 리셋)
+```
+
+| 상태 | 설명 | 동작 |
+|------|------|------|
+| 🟢 **Closed** (정상) | 회로가 닫혀 요청이 정상 통과 | 성공/실패율을 백그라운드에서 기록. 실패율이 임계치(예: 50%)를 넘으면 Open으로 전환 |
+| 🔴 **Open** (차단) | 유저 서버 장애로 판단, 요청 즉시 차단 | `CallNotPermittedException` 또는 Fallback 응답 반환. 유저 서버는 트래픽 없이 회복 시간 확보. 설정된 대기 시간(예: 30초) 후 Half-Open으로 전환 |
+| 🟡 **Half-Open** (테스트) | 회복 여부를 확인하기 위해 소수 요청만 허용 | 간보기 요청이 **모두 성공** → Closed 복귀. **하나라도 실패** → Open으로 복귀 후 타이머 리셋 |
 
 ---
 
