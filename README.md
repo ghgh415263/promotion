@@ -194,12 +194,165 @@ Authorization: Bearer <token>
 
 ---
 
+## 🔍 OpenTelemetry + Jaeger 분산 추적 (Distributed Tracing)
+
+### 왜 필요한가 — 요청 흐름 추적
+
+마이크로서비스 환경에서는 하나의 사용자 요청이 여러 서비스를 거치며 처리된다.
+
+예를 들어 회원 조회 요청은 다음과 같은 흐름을 가진다.
+
+```text
+Client
+  ↓
+API Gateway
+  ↓
+User Service
+  ↓
+MySQL
+```
+
+만약 응답 속도가 느려지거나 오류가 발생했을 때 일반 로그만으로는 어느 구간에서 문제가 발생했는지 파악하기 어렵다.
+
+```
+1. API 응답 시간이 3초 이상 소요됨
+2. Gateway 문제인지 User Service 문제인지 확인 불가
+3. DB 조회 때문인지 외부 API 호출 때문인지 확인 불가
+4. 여러 서비스 로그를 직접 조회하며 원인 분석 필요
+```
+
+> 💡 **OpenTelemetry의 해결책**
+>
+> "하나의 요청을 Trace 단위로 추적하여 서비스 간 호출 흐름과 각 구간의 수행 시간을 시각적으로 확인한다."
+
+---
+
+### 전체 흐름
+
+```text
+Client
+  ↓
+API Gateway
+  ↓
+User Service
+  ↓
+MySQL
+
+       OpenTelemetry Java Agent
+                    ↓
+                OTLP Export
+                    ↓
+                 Jaeger
+                    ↓
+              Trace 조회
+```
+
+각 서비스는 OpenTelemetry Java Agent를 통해 자동 계측되며 생성된 Trace 데이터를 Jaeger로 전송한다.
+
+Jaeger UI에서는 다음 정보를 확인할 수 있다.
+
+* 요청 전체 처리 시간
+* 서비스 간 호출 순서
+* DB 쿼리 수행 시간
+* 오류 발생 위치
+* 병목 구간
+
+---
+
+### Java Agent 방식 선택 이유
+
+OpenTelemetry는 코드 기반 계측과 Java Agent 기반 계측을 모두 지원한다.
+
+본 프로젝트에서는 별도의 코드 수정 없이 자동 계측이 가능한 Java Agent 방식을 사용하였다.
+
+장점
+
+* 비즈니스 코드 수정 없음
+* Spring MVC 자동 계측
+* JDBC 자동 계측
+* Eureka Client 호출 자동 계측
+* 향후 Redis, Kafka, RestTemplate 등 자동 확장 가능
+
+---
+
+### Jaeger 실행
+
+```yaml
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+```
+
+실행
+
+```bash
+docker compose up -d
+```
+
+접속
+
+```text
+http://localhost:16686
+```
+
+---
+
+### OpenTelemetry Agent 실행 옵션
+
+```text
+-javaagent:$PROJECT_DIR$/infrastructure/opentelemetry-javaagent.jar 
+-Dotel.service.name=api-gateway 
+-Dotel.exporter.otlp.endpoint=http://localhost:4318 
+-Dotel.javaagent.debug=true
+```
+
+| 옵션                          | 설명                          |
+| --------------------------- | --------------------------- |
+| -javaagent                  | OpenTelemetry Java Agent 적용 |
+| otel.service.name           | Jaeger에 표시될 서비스 이름          |
+| otel.exporter.otlp.protocol | OTLP 전송 프로토콜(gRPC)          |
+| otel.exporter.otlp.endpoint | Jaeger OTLP Endpoint        |
+| otel.logs.exporter          | 로그 Export 비활성화              |
+
+---
+
+### Trace 예시
+
+회원 생성 요청
+
+```text
+POST /users
+ ├─ UserController.createUser()
+ ├─ INSERT users
+ └─ Eureka Heartbeat
+```
+
+Jaeger에서는 각 구간의 수행 시간과 상태를 시각적으로 확인할 수 있다.
+
+예시
+
+```text
+POST /users                 120ms
+ ├─ INSERT users             15ms
+ └─ HTTP Call (Eureka)        4ms
+```
+
+이를 통해 병목 지점과 장애 발생 위치를 빠르게 파악할 수 있다.
+
+
+
 ## 🛠 기술 스택
 
-| 분류 | 기술 |
-|------|------|
-| Gateway | Spring Cloud Gateway |
-| 인증 | JWT |
-| Rate Limit | Redis + RequestRateLimiter |
-| 서비스 디스커버리 | Spring Cloud Netflix Eureka |
-| 빌드 | Gradle |
+| 분류         | 기술                                |
+| ---------- | --------------------------------- |
+| Gateway    | Spring Cloud Gateway              |
+| 인증         | JWT                               |
+| Rate Limit | Redis + RequestRateLimiter        |
+| 서비스 디스커버리  | Spring Cloud Netflix Eureka       |
+| 분산 추적      | OpenTelemetry Java Agent + Jaeger |
+| 빌드         | Gradle                            |
+
