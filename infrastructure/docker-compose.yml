@@ -1,4 +1,5 @@
 version: '3.8'
+
 services:
   redis:
     image: redis:latest
@@ -13,10 +14,49 @@ services:
 
   jaeger:
     image: jaegertracing/all-in-one:latest
+    container_name: jaeger
     ports:
-      - "16686:16686" # UI
-      - "4317:4317"   # OTLP gRPC
-      - "4318:4318"   # OTLP HTTP
+      - "16686:16686" # Jaeger UI 포트만 밖으로 개방
+      # 4317, 4318 포트는 호스트(윈도우) 개방을 하지 않고, 내부망에서 Alloy와 통신합니다.
+    networks:
+      - promotion_network
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - promotion_network
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - promotion_network
+    depends_on:
+      - loki
+
+  alloy:
+    image: grafana/alloy:v1.1.0
+    container_name: alloy
+    ports:
+      - "12345:12345" # Alloy 자체 UI
+      - "4317:4317"   # [중요] 인텔리제이 자바 에이전트가 쏠 gRPC 포트
+      - "4318:4318"   # [중요] 인텔리제이 자바 에이전트가 쏠 HTTP 포트
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+    command: run --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    networks:
+      - promotion_network
+    depends_on:
+      - loki
+      - jaeger
 
 networks:
   promotion_network:

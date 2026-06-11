@@ -1,5 +1,6 @@
 package org.example.userservice.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.example.userservice.dto.UserDto;
 import org.example.userservice.entity.User;
 import org.example.userservice.service.JWTService;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Collections;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/users")
 public class AuthController {
@@ -39,6 +41,7 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(
             @RequestBody UserDto.LoginRequest request) {
+        log.info("/login 요청 들어옴");
         User user = userService.authenticate(request.getEmail(), request.getPassword());
         String token = jwtService.generateToken(user);
         return ResponseEntity.ok(UserDto.LoginResponse.builder()
@@ -53,6 +56,8 @@ public class AuthController {
     @PostMapping("/validate-token")
     public ResponseEntity<?> validateToken(
             @RequestBody UserDto.TokenRequest request) {
+
+        log.info("/validate-token 요청 들어옴");
         Claims claims = jwtService.validateToken(request.getToken());
         return ResponseEntity.ok(UserDto.TokenResponse.builder()
                 .id(claims.get("id", Long.class))

@@ -1,5 +1,6 @@
 package org.example.userservice.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.example.userservice.dto.UserDto;
 import org.example.userservice.entity.User;
 import org.example.userservice.entity.UserLoginHistory;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/users")
 public class UserController {
@@ -33,6 +35,7 @@ public class UserController {
     @GetMapping("/me")
     public ResponseEntity<?> getProfile(
             @RequestHeader("X-USER-ID") Integer userId) {
+        log.info("/me 요청 들어옴");
         User user = userService.getUserById(userId);
         return ResponseEntity.ok(UserDto.Response.from(user));
     }

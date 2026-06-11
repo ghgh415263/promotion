@@ -1,0 +1,43 @@
+// 1. 인텔리제이(원도우 호스트)의 OpenTelemetry 에이전트로부터 입력을 받음
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input] // 트레이스도 일로 들어와!
+    metrics = []
+  }
+}
+
+// 2. 버퍼링 및 배치 처리 (성능 최적화)
+otelcol.processor.batch "default" {
+  output {
+    logs   = [otelcol.exporter.loki.to_loki.input]
+    traces = [otelcol.exporter.otlp.to_jaeger.input] // 트레이스는 제거 내보내기로
+  }
+}
+
+// 3. 로그 배송지: Loki
+otelcol.exporter.loki "to_loki" {
+  forward_to = [loki.write.loki_backend.receiver]
+}
+
+loki.write "loki_backend" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// 4. 트레이스 배송지: Jaeger (도커 컨테이너 이름인 jaeger:4317로 쏩니다)
+otelcol.exporter.otlp "to_jaeger" {
+  client {
+    endpoint = "jaeger:4317"
+    tls {
+      insecure = true
+    }
+  }
+}
